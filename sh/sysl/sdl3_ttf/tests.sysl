@@ -1,0 +1,336 @@
+module sh.sysl.sdl3_ttf
+@tests
+
+import sysl.fs.is_file
+import sh.sysl.sdl3.{Color, HINT_VIDEO_DRIVER, INIT_VIDEO, WINDOW_HIDDEN, create_window, init, quit,
+                     rgb, set_hint}
+
+// The package's own tests, against a real SDL3_ttf.
+//
+// **The headline is that `SDL_Color` crosses by value**, and the check is not a size assertion — it
+// is a shaded render, whose background fills the whole surface, read back at pixel (0, 0). A colour
+// that arrived as bytes derived from an argument pointer gives some other number there, which is
+// exactly the failure the Scala binding to this library works around by packing the struct into a
+// `uint32` by hand.
+
+// A font every machine this is likely to run on has. **Not a fixed path**: the tests need a real
+// font file and where one lives is the platform's business, so the first of these that exists is
+// used and the absence of all of them is a failure with something to read rather than a null handle
+// forty lines later.
+font_path() -> string
+    val candidates = [
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+
+    for i in 0..<candidates.len
+        if is_file(candidates[i]) then return candidates[i]
+
+    ""
+end font_path
+
+// SDL and SDL_ttf up, headless, with a font open. Every test below starts here.
+open_a_font(size: f32) -> Font
+    set_hint(HINT_VIDEO_DRIVER, "dummy")
+    assert(init(INIT_VIDEO), "SDL_Init")
+    assert(ttf_init(), "TTF_Init")
+
+    val path = font_path()
+
+    assert(path != "", "this machine has one of the fonts the tests know about")
+    open_font(path, size).expect("the font opened")
+end open_a_font
+
+shut_down(f: Font)
+    f.close()
+    ttf_quit()
+    quit()
+
+// **The by-value question, answered against the real library.** A shaded render fills the surface
+// with `bg` and draws the glyphs in `fg`, so pixel (0, 0) is the background and nothing else.
+@test
+a_colour_crosses_by_value()
+    val f = open_a_font(24.0)
+    val bg = Color(17, 34, 51, 255)
+    val s = f.render_shaded("Hg", rgb(255, 0, 0), bg).expect("the text rendered")
+    val c = s.read_pixel(0, 0).expect("the corner pixel read back")
+
+    assert_eq(c.r, 17u8, "the background red arrived")
+    assert_eq(c.g, 34u8, "the background green arrived")
+    assert_eq(c.b, 51u8, "the background blue arrived")
+
+    s.destroy()
+    shut_down(f)
+
+// **And in the second argument position too**, which is the one an ABI is most likely to get wrong:
+// `TTF_RenderText_Shaded` takes two `SDL_Color`s, so a marshalling that only worked for the first
+// would pass the test above and fail here. Swapping the two colours must swap the corner pixel.
+@test
+a_colour_crosses_in_both_positions()
+    val f = open_a_font(24.0)
+    val a = Color(10, 20, 30, 255)
+    val b = Color(200, 150, 100, 255)
+
+    val first = f.render_shaded("Hg", a, b).expect("rendered one way")
+    val fc = first.read_pixel(0, 0).expect("read it")
+
+    assert_eq(fc.r, 200u8, "the background is the second argument")
+    assert_eq(fc.g, 150u8, "on every channel")
+    assert_eq(fc.b, 100u8, "on every channel")
+
+    val second = f.render_shaded("Hg", b, a).expect("rendered the other way")
+    val sc = second.read_pixel(0, 0).expect("read it")
+
+    assert_eq(sc.r, 10u8, "and swapping them swaps the corner")
+    assert_eq(sc.g, 20u8, "on every channel")
+    assert_eq(sc.b, 30u8, "on every channel")
+
+    first.destroy()
+    second.destroy()
+    shut_down(f)
+
+// The four qualities are four C symbols, and calling the wrong one is the kind of mistake that
+// still renders text — so each is pinned to something only it does.
+//
+// **Two axes tell them apart.** The first is the surface SDL_ttf answers with: solid and shaded are
+// 8-bit palettized, blended and LCD are 32-bit. The second is the corner pixel: the two that take a
+// background fill the whole surface with it, and the two that do not, do not.
+@test
+the_four_renders_are_four_different_calls()
+    val f = open_a_font(24.0)
+    val fg = rgb(255, 255, 255)
+    val bg = Color(9, 9, 9, 255)
+
+    val solid = f.render_solid("Hg", fg).expect("solid")
+    val blended = f.render_blended("Hg", fg).expect("blended")
+    val shaded = f.render_shaded("Hg", fg, bg).expect("shaded")
+    val lcd = f.render_lcd("Hg", fg, bg).expect("LCD")
+
+    assert_eq(solid.format(), shaded.format(), "solid and shaded are both palettized")
+    assert_eq(blended.format(), lcd.format(), "blended and LCD are both true colour")
+    assert(solid.format() != blended.format(), "and the two pairs are not the same surface")
+
+    assert_eq(blended.read_pixel(0, 0).expect("blended corner").a, 0u8,
+        "blended has no background, so its corner is clear")
+    assert_eq(shaded.read_pixel(0, 0).expect("shaded corner").r, 9u8,
+        "shaded fills the whole surface with the background it was given")
+    assert_eq(lcd.read_pixel(0, 0).expect("LCD corner").r, 9u8, "and so does LCD")
+    assert(solid.read_pixel(0, 0).expect("solid corner").r != 9u8,
+        "while solid was given no background and has none")
+
+    solid.destroy()
+    blended.destroy()
+    shaded.destroy()
+    lcd.destroy()
+    shut_down(f)
+
+// ---- metrics ----
+
+@test
+a_font_reports_its_metrics()
+    val f = open_a_font(24.0)
+
+    assert(f.height() > 0, "a line of text has a height")
+    assert(f.ascent() > 0, "the tallest glyph rises above the baseline")
+    assert(f.descent() < 0, "and the lowest descends below it, which is a negative number")
+    assert(f.line_skip() > 0, "and a paragraph steps by something")
+    assert(f.family_name().len > 0, "the file declares a family")
+    assert_eq(f.size(), 24.0f32, "and it is open at the size it was asked for")
+
+    shut_down(f)
+
+@test
+a_font_can_be_resized_in_place()
+    val f = open_a_font(12.0)
+    val (small_w, small_h) = f.measure("Hamburgefonstiv")
+
+    assert(f.set_size(48.0), "resized")
+    assert_eq(f.size(), 48.0f32, "to the size asked for")
+
+    val (big_w, big_h) = f.measure("Hamburgefonstiv")
+
+    assert(big_w > small_w, "and four times the points is wider")
+    assert(big_h > small_h, "and taller")
+
+    shut_down(f)
+
+// Measuring must agree with rendering, or a layout puts text where the text is not.
+@test
+measuring_agrees_with_rendering()
+    val f = open_a_font(24.0)
+    val (w, h) = f.measure("Hamburgefonstiv")
+
+    assert(w > 0, "the string measured wider than nothing")
+    assert(h > 0, "and taller than nothing")
+
+    val s = f.render_blended("Hamburgefonstiv", rgb(255, 255, 255)).expect("rendered")
+
+    assert_eq(s.width(), w, "and the surface is exactly as wide as the measurement said")
+    assert_eq(s.height(), h, "and exactly as tall")
+
+    s.destroy()
+    shut_down(f)
+
+@test
+wrapping_is_narrower_and_taller()
+    val f = open_a_font(18.0)
+    val text = "the quick brown fox jumps over the lazy dog"
+    val (flat_w, flat_h) = f.measure(text)
+    val (wrapped_w, wrapped_h) = f.measure_wrapped(text, 100)
+
+    assert(wrapped_w <= 100 + flat_w, "wrapping keeps it within reach of the width asked for")
+    assert(wrapped_w < flat_w, "and narrower than one line")
+    assert(wrapped_h > flat_h, "at the cost of being taller")
+
+    val s = f.render_blended_wrapped(text, rgb(255, 255, 255), 100).expect("rendered wrapped")
+
+    assert_eq(s.width(), wrapped_w, "and the wrapped render is the wrapped measurement")
+    assert_eq(s.height(), wrapped_h, "on both axes")
+
+    s.destroy()
+    shut_down(f)
+
+// What an ellipsis and a click-to-place-the-cursor both need: how much of a string fits, in bytes.
+@test
+fitting_says_how_much_of_a_string_lands()
+    val f = open_a_font(24.0)
+    val text = "Hamburgefonstiv"
+    val (full_w, _) = f.measure(text)
+    val (w, n) = f.fit(text, full_w / 2)
+
+    assert(n > 0, "some of it fits in half the width")
+    assert(n < text.len, "but not all of it")
+    assert(w <= full_w / 2, "and what fits is no wider than what was asked for")
+
+    val (all_w, all_n) = f.fit(text, full_w * 2)
+
+    assert_eq(all_n, text.len, "given twice the room, all of it fits")
+    assert_eq(all_w, full_w, "at its own width")
+
+    shut_down(f)
+
+// ---- settings ----
+
+@test
+the_style_flags_change_the_glyphs()
+    val f = open_a_font(24.0)
+
+    assert_eq(f.style(), STYLE_NORMAL, "a font opens unstyled")
+
+    val (plain_w, _) = f.measure("Hamburgefonstiv")
+
+    f.set_style(STYLE_BOLD)
+    assert_eq(f.style(), STYLE_BOLD, "bold was set")
+
+    val (bold_w, _) = f.measure("Hamburgefonstiv")
+
+    assert(bold_w > plain_w, "and synthesised bold is wider than plain")
+
+    f.set_style(STYLE_BOLD | STYLE_ITALIC | STYLE_UNDERLINE)
+    assert_eq(f.style(), STYLE_BOLD | STYLE_ITALIC | STYLE_UNDERLINE, "the flags combine")
+
+    f.set_style(STYLE_NORMAL)
+    assert_eq(f.style(), STYLE_NORMAL, "and clear")
+
+    shut_down(f)
+
+@test
+an_outline_makes_everything_bigger()
+    val f = open_a_font(24.0)
+
+    assert_eq(f.outline(), 0i32, "a font opens with no outline")
+
+    val (plain_w, plain_h) = f.measure("Hg")
+
+    assert(f.set_outline(2), "an outline was set")
+    assert_eq(f.outline(), 2i32, "and read back")
+
+    val (out_w, out_h) = f.measure("Hg")
+
+    assert(out_w > plain_w, "two pixels of outline is wider")
+    assert(out_h > plain_h, "and taller")
+
+    assert(f.set_outline(0), "and it turns off")
+    shut_down(f)
+
+@test
+hinting_and_kerning_round_trip()
+    val f = open_a_font(24.0)
+
+    f.set_hinting(HINTING_MONO)
+    assert_eq(f.hinting(), HINTING_MONO, "mono hinting")
+
+    f.set_hinting(HINTING_NONE)
+    assert_eq(f.hinting(), HINTING_NONE, "and none")
+
+    assert(f.kerning(), "kerning is on to begin with")
+    f.set_kerning(false)
+    assert(!f.kerning(), "and turns off, which is what a grid layout wants")
+    f.set_kerning(true)
+
+    shut_down(f)
+
+@test
+a_font_knows_which_glyphs_it_has()
+    val f = open_a_font(24.0)
+
+    assert(f.has_glyph(u32('A')), "a Latin capital")
+    assert(f.has_glyph(u32(' ')), "and a space")
+    assert(!f.has_glyph(0x10fffdu32), "and not a private-use code point at the top of the range")
+
+    shut_down(f)
+
+// ---- the renderer bridge ----
+
+// The two-step every caller was going to write — render to a surface, upload, free — with the
+// surface freed in between. This is the call a UI actually uses.
+@test
+text_goes_straight_to_a_texture()
+    val f = open_a_font(24.0)
+    val w = create_window("ttf", 64, 64, WINDOW_HIDDEN).expect("the window opened")
+    val r = w.create_renderer().expect("the renderer opened")
+    val t = f.texture(r, "Hg", rgb(255, 255, 255)).expect("the texture was made")
+    val (tw, th) = t.size()
+    val (mw, mh) = f.measure("Hg")
+
+    assert_eq(tw, f32(mw), "the texture is as wide as the text measured")
+    assert_eq(th, f32(mh), "and as tall")
+
+    t.destroy()
+    r.destroy()
+    w.destroy()
+    shut_down(f)
+
+// ---- lifecycle ----
+
+@test
+the_library_reports_itself()
+    set_hint(HINT_VIDEO_DRIVER, "dummy")
+    assert(init(INIT_VIDEO), "SDL_Init")
+
+    assert_eq(ttf_was_init(), 0i32, "SDL_ttf is not up yet")
+    assert(ttf_init(), "TTF_Init")
+    assert_eq(ttf_was_init(), 1i32, "and now it is, once")
+    assert(ttf_version() >= 3000000, "and it is SDL_ttf 3 or better")
+
+    ttf_quit()
+    assert_eq(ttf_was_init(), 0i32, "and it comes back down")
+    quit()
+
+// A font that is not there is nothing, rather than a handle that fails later.
+@test
+a_missing_font_is_nothing()
+    set_hint(HINT_VIDEO_DRIVER, "dummy")
+    assert(init(INIT_VIDEO), "SDL_Init")
+    assert(ttf_init(), "TTF_Init")
+
+    open_font("/no/such/font.ttf", 12.0) match
+        Some(_) -> assert(false, "a font that is not there did not open")
+        None -> ()
+
+    ttf_quit()
+    quit()

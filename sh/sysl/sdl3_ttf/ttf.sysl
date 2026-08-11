@@ -1,0 +1,290 @@
+module sh.sysl.sdl3_ttf
+@link("SDL3_ttf")
+
+import sysl.text.{cstring, from_cstring}
+import sh.sysl.sdl3.{Color, Renderer, Surface, Texture}
+
+// SDL_ttf 3 — a font file, and text rendered out of it onto a surface.
+//
+// **`SDL_Color` crosses by value, and that is worth saying out loud**, because the Scala binding to
+// this same library cannot do it: Scala Native mis-marshals a small by-value struct argument, so it
+// packs the four channels into a `uint32` by hand and relies on an aggregate of four bytes and a
+// `uint32` being passed in the same register — true on SysV-AMD64 and AArch64, and a bet everywhere
+// else. Nothing of the sort is needed here. `tests.sysl` proves it the only way that is worth
+// anything: it renders shaded text, whose background fills the surface, and reads pixel (0, 0)
+// back. A colour that arrived as bytes derived from an argument pointer gives some other number.
+//
+// **A render answers a CPU surface**, which is uploaded to the GPU with
+// `Renderer.create_texture_from_surface` and then freed — or with `Font.texture`, which does both.
+//
+// **`init` and `quit` are named `ttf_init` and `ttf_quit`** so that a program importing this
+// alongside `sh.sysl.sdl3` has no clash to resolve. Everything else here is a method on `Font`.
+
+extern "TTF_Init" ttf_init_raw() -> bool
+extern "TTF_Quit" ttf_quit_raw()
+extern "TTF_Version" ttf_version_raw() -> i32
+extern "TTF_WasInit" ttf_was_init_raw() -> i32
+
+extern "TTF_OpenFont" ttf_open_font(file: *u8, ptsize: f32) -> *u8
+extern "TTF_CloseFont" ttf_close_font(font: *u8)
+extern "TTF_SetFontSize" ttf_set_font_size(font: *u8, ptsize: f32) -> bool
+extern "TTF_GetFontSize" ttf_get_font_size(font: *u8) -> f32
+
+extern "TTF_SetFontStyle" ttf_set_font_style(font: *u8, style: u32)
+extern "TTF_GetFontStyle" ttf_get_font_style(font: *u8) -> u32
+extern "TTF_SetFontOutline" ttf_set_font_outline(font: *u8, outline: i32) -> bool
+extern "TTF_GetFontOutline" ttf_get_font_outline(font: *u8) -> i32
+extern "TTF_SetFontHinting" ttf_set_font_hinting(font: *u8, hinting: i32)
+extern "TTF_GetFontHinting" ttf_get_font_hinting(font: *u8) -> i32
+extern "TTF_SetFontKerning" ttf_set_font_kerning(font: *u8, enabled: bool)
+extern "TTF_GetFontKerning" ttf_get_font_kerning(font: *u8) -> bool
+extern "TTF_SetFontWrapAlignment" ttf_set_font_wrap_alignment(font: *u8, align: i32)
+
+extern "TTF_GetFontHeight" ttf_get_font_height(font: *u8) -> i32
+extern "TTF_GetFontAscent" ttf_get_font_ascent(font: *u8) -> i32
+extern "TTF_GetFontDescent" ttf_get_font_descent(font: *u8) -> i32
+extern "TTF_GetFontLineSkip" ttf_get_font_line_skip(font: *u8) -> i32
+extern "TTF_GetFontWeight" ttf_get_font_weight(font: *u8) -> i32
+extern "TTF_GetFontFamilyName" ttf_get_font_family_name(font: *u8) -> *u8
+extern "TTF_GetFontStyleName" ttf_get_font_style_name(font: *u8) -> *u8
+extern "TTF_FontHasGlyph" ttf_font_has_glyph(font: *u8, ch: u32) -> bool
+
+extern "TTF_GetStringSize" ttf_get_string_size(font: *u8, text: *u8, len: usize, w: *i32, h: *i32) -> bool
+extern "TTF_GetStringSizeWrapped" ttf_get_string_size_wrapped(font: *u8, text: *u8, len: usize,
+                                                              wrap: i32, w: *i32, h: *i32) -> bool
+extern "TTF_MeasureString" ttf_measure_string(font: *u8, text: *u8, len: usize, max_width: i32,
+                                              measured_width: *i32, measured_length: *usize) -> bool
+
+// **The four render calls, each taking `SDL_Color` by value**, and two of them overloaded on arity
+// under one sysl name — shaded is the one that takes a background.
+extern "TTF_RenderText_Solid" ttf_render_solid(font: *u8, text: *u8, len: usize, fg: Color) -> *u8
+extern "TTF_RenderText_Shaded" ttf_render_shaded(font: *u8, text: *u8, len: usize, fg: Color, bg: Color) -> *u8
+extern "TTF_RenderText_Blended" ttf_render_blended(font: *u8, text: *u8, len: usize, fg: Color) -> *u8
+extern "TTF_RenderText_LCD" ttf_render_lcd(font: *u8, text: *u8, len: usize, fg: Color, bg: Color) -> *u8
+
+extern "TTF_RenderText_Solid_Wrapped" ttf_render_solid_wrapped(font: *u8, text: *u8, len: usize,
+                                                               fg: Color, wrap: i32) -> *u8
+extern "TTF_RenderText_Shaded_Wrapped" ttf_render_shaded_wrapped(font: *u8, text: *u8, len: usize,
+                                                                 fg: Color, bg: Color, wrap: i32) -> *u8
+extern "TTF_RenderText_Blended_Wrapped" ttf_render_blended_wrapped(font: *u8, text: *u8, len: usize,
+                                                                   fg: Color, wrap: i32) -> *u8
+
+// ---- style flags (TTF_FontStyleFlags), combined with `|` ----
+
+const STYLE_NORMAL: u32 = 0x00
+const STYLE_BOLD: u32 = 0x01
+const STYLE_ITALIC: u32 = 0x02
+const STYLE_UNDERLINE: u32 = 0x04
+const STYLE_STRIKETHROUGH: u32 = 0x08
+
+// ---- hinting (TTF_HintingFlags) ----
+
+const HINTING_INVALID: i32 = -1
+const HINTING_NORMAL: i32 = 0
+const HINTING_LIGHT: i32 = 1
+const HINTING_MONO: i32 = 2
+const HINTING_NONE: i32 = 3
+const HINTING_LIGHT_SUBPIXEL: i32 = 4
+
+// ---- wrap alignment (TTF_HorizontalAlignment) ----
+
+const ALIGN_INVALID: i32 = -1
+const ALIGN_LEFT: i32 = 0
+const ALIGN_CENTER: i32 = 1
+const ALIGN_RIGHT: i32 = 2
+
+// A render call takes a byte length, and zero tells SDL_ttf the text is NUL-terminated — which it
+// always is here, because `cstring` is what produced it.
+const NUL_TERMINATED: usize = 0
+
+// Bring SDL_ttf up. Call it after SDL itself is initialised.
+ttf_init() -> bool = ttf_init_raw()
+
+ttf_quit() = ttf_quit_raw()
+
+// The SDL_ttf being linked, as `major * 1000000 + minor * 1000 + patch`.
+ttf_version() -> i32 = ttf_version_raw()
+
+// How many times `ttf_init` has been called without a matching `ttf_quit`.
+ttf_was_init() -> i32 = ttf_was_init_raw()
+
+// A loaded font at a point size.
+struct Font
+    handle: *u8
+
+    // ---- metrics ----
+
+    // The tallest a glyph gets, in pixels — what a single line of text occupies.
+    height(self) -> i32 = ttf_get_font_height(self.handle)
+
+    // How far the tallest glyph rises above the baseline.
+    ascent(self) -> i32 = ttf_get_font_ascent(self.handle)
+
+    // How far the lowest descends below it, as a negative number.
+    descent(self) -> i32 = ttf_get_font_descent(self.handle)
+
+    // The recommended step from one baseline to the next, which is what a paragraph should use
+    // rather than `height` — a font may want more or less leading than its glyphs strictly need.
+    line_skip(self) -> i32 = ttf_get_font_line_skip(self.handle)
+
+    weight(self) -> i32 = ttf_get_font_weight(self.handle)
+
+    // The family the file declares — "Arial" — or `""` where it declares none.
+    family_name(self) -> string = from_cstring(ttf_get_font_family_name(self.handle)).unwrap_or("")
+
+    // The face within the family — "Bold Italic".
+    style_name(self) -> string = from_cstring(ttf_get_font_style_name(self.handle)).unwrap_or("")
+
+    // Whether the font can draw this code point. A run of text with a character the font lacks
+    // renders a fallback box, so this is what a picker checks before offering a font.
+    has_glyph(self, ch: u32) -> bool = ttf_font_has_glyph(self.handle, ch)
+
+    // ---- settings ----
+
+    size(self) -> f32 = ttf_get_font_size(self.handle)
+
+    // Change the point size in place, which is cheaper than opening the file again.
+    set_size(self, ptsize: f32) -> bool = ttf_set_font_size(self.handle, ptsize)
+
+    // The synthesised styles, a mask of the `STYLE_*` values. These are drawn by SDL_ttf rather
+    // than taken from a bold or italic face, so a real bold file looks better where there is one.
+    style(self) -> u32 = ttf_get_font_style(self.handle)
+
+    set_style(self, style: u32) = ttf_set_font_style(self.handle, style)
+
+    // An outline of this many pixels around every glyph, for text over an unpredictable background.
+    // Zero turns it off.
+    outline(self) -> i32 = ttf_get_font_outline(self.handle)
+
+    set_outline(self, pixels: i32) -> bool = ttf_set_font_outline(self.handle, pixels)
+
+    hinting(self) -> i32 = ttf_get_font_hinting(self.handle)
+
+    set_hinting(self, hinting: i32) = ttf_set_font_hinting(self.handle, hinting)
+
+    kerning(self) -> bool = ttf_get_font_kerning(self.handle)
+
+    // Kerning is on to begin with. Turning it off is for laying text out on a grid, where every
+    // advance has to be the same.
+    set_kerning(self, on: bool) = ttf_set_font_kerning(self.handle, on)
+
+    // How wrapped lines line up with each other — one of the `ALIGN_*` values.
+    set_wrap_alignment(self, align: i32) = ttf_set_font_wrap_alignment(self.handle, align)
+
+    // ---- measuring ----
+
+    // The pixels a string would occupy, without rendering it. What a layout asks before it decides
+    // where anything goes.
+    measure(self, text: string) -> (i32, i32)
+        val t = cstring(text)
+
+        var w: i32 = 0
+        var h: i32 = 0
+
+        ttf_get_string_size(self.handle, t.ptr, NUL_TERMINATED, &w, &h)
+        (w, h)
+    end measure
+
+    // The same for text wrapped at a width. Zero wraps only on newlines.
+    measure_wrapped(self, text: string, wrap: i32) -> (i32, i32)
+        val t = cstring(text)
+
+        var w: i32 = 0
+        var h: i32 = 0
+
+        ttf_get_string_size_wrapped(self.handle, t.ptr, NUL_TERMINATED, wrap, &w, &h)
+        (w, h)
+    end measure_wrapped
+
+    // How much of a string fits in `max_width`: the width it actually took, and how many **bytes**
+    // of it that was. This is what an editor uses to place a cursor from a mouse position, and what
+    // an ellipsis needs to know where to cut.
+    fit(self, text: string, max_width: i32) -> (i32, usize)
+        val t = cstring(text)
+
+        var w: i32 = 0
+        var n: usize = 0
+
+        ttf_measure_string(self.handle, t.ptr, NUL_TERMINATED, max_width, &w, &n)
+        (w, n)
+    end fit
+
+    // ---- rendering ----
+
+    // Fast and aliased, on a transparent background. The cheapest of the four, and the one that
+    // looks worst at a large size.
+    render_solid(self, text: string, fg: Color) -> Option[Surface]
+        val t = cstring(text)
+
+        surface_of(ttf_render_solid(self.handle, t.ptr, NUL_TERMINATED, fg))
+    end render_solid
+
+    // Antialiased, on a solid box of `bg`. The whole surface is filled with the background, which
+    // is why this is the render that proves a colour crossed by value.
+    render_shaded(self, text: string, fg: Color, bg: Color) -> Option[Surface]
+        val t = cstring(text)
+
+        surface_of(ttf_render_shaded(self.handle, t.ptr, NUL_TERMINATED, fg, bg))
+    end render_shaded
+
+    // Antialiased with an alpha channel — the usual choice, and what a HUD or a label wants.
+    render_blended(self, text: string, fg: Color) -> Option[Surface]
+        val t = cstring(text)
+
+        surface_of(ttf_render_blended(self.handle, t.ptr, NUL_TERMINATED, fg))
+    end render_blended
+
+    // Subpixel-antialiased on a solid background, which reads better on an LCD at small sizes and
+    // is wrong on anything rotated or scaled.
+    render_lcd(self, text: string, fg: Color, bg: Color) -> Option[Surface]
+        val t = cstring(text)
+
+        surface_of(ttf_render_lcd(self.handle, t.ptr, NUL_TERMINATED, fg, bg))
+    end render_lcd
+
+    // The wrapped forms. `wrap` is a width in pixels; zero wraps only where the text has newlines.
+    render_solid_wrapped(self, text: string, fg: Color, wrap: i32) -> Option[Surface]
+        val t = cstring(text)
+
+        surface_of(ttf_render_solid_wrapped(self.handle, t.ptr, NUL_TERMINATED, fg, wrap))
+    end render_solid_wrapped
+
+    render_shaded_wrapped(self, text: string, fg: Color, bg: Color, wrap: i32) -> Option[Surface]
+        val t = cstring(text)
+
+        surface_of(ttf_render_shaded_wrapped(self.handle, t.ptr, NUL_TERMINATED, fg, bg, wrap))
+    end render_shaded_wrapped
+
+    render_blended_wrapped(self, text: string, fg: Color, wrap: i32) -> Option[Surface]
+        val t = cstring(text)
+
+        surface_of(ttf_render_blended_wrapped(self.handle, t.ptr, NUL_TERMINATED, fg, wrap))
+    end render_blended_wrapped
+
+    // Blended text straight to a GPU texture — the two-step every caller was going to write, with
+    // the surface freed in between. The caller draws it with `renderer.copy_at(t, x, y)` and
+    // destroys it, or keeps it: a texture per label, rebuilt when the label changes, is what a UI
+    // should do rather than rendering text every frame.
+    texture(self, renderer: Renderer, text: string, fg: Color) -> Option[Texture]
+        self.render_blended(text, fg) match
+            Some(s) ->
+                val t = renderer.create_texture_from_surface(s)
+
+                s.destroy()
+                t
+            None -> None
+    end texture
+
+    close(self) = ttf_close_font(self.handle)
+end Font
+
+// Open a font file at a point size. Nothing if it will not open, with the reason in
+// `sh.sysl.sdl3.error`.
+open_font(path: string, ptsize: f32) -> Option[Font]
+    val p = cstring(path)
+    val f = ttf_open_font(p.ptr, ptsize)
+
+    if f == null then None else Some(Font(f))
+end open_font
+
+private surface_of(p: *u8) -> Option[Surface] = if p == null then None else Some(Surface(p))
