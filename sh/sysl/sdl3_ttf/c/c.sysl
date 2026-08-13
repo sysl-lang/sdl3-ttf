@@ -1,0 +1,135 @@
+// SDL_ttf 3, declared verbatim.
+//
+// **Everything that is C lives in this directory** — this one file of declarations over the library
+// the machine has. Nothing here is meant to be called by a program: every name and every convention
+// is C's, so a font is a pointer, a string is a pointer and a byte length, and a style is a bit in
+// a mask. The module above this one turns those into sysl and is what an application imports.
+//
+// The split keeps two jobs apart. This one has to be **faithful** — a signature that disagrees with
+// the header links perfectly and corrupts the call at run time — and the other one has to be
+// **pleasant**, which is a different question.
+//
+// **`SDL_Color` is imported from the layer above `sh.sysl.sdl3`, not from its `c`**, and that is
+// the one place in the org where a raw layer names a pleasant one. It is deliberate: a colour is
+// four bytes with four methods on it and no handle, so it belongs where its methods are, and there
+// is nothing for a second declaration of it here to be more faithful about. What matters is that it
+// crosses **by value**, which sysl does correctly — see the note in the module above.
+
+module sh.sysl.sdl3_ttf.c
+@link("SDL3_ttf")
+
+@include("SDL3_ttf/SDL_ttf.h")
+
+import sh.sysl.sdl3.Color
+import sh.sysl.sdl3.c.Surface
+
+// ## The numbers, asked for rather than written down
+//
+// `15 §7` calls a transcribed constant "correct on one machine" with "nothing checking it". These
+// are what the C compiler computes for SDL_ttf's own names, out of the header named above.
+
+// The synthesised styles, combined with `|`. `TTF_FontStyleFlags` is a mask rather than an
+// enumeration, which is why it stays a set of numbers here: several are true at once, and that is
+// exactly what an enumeration cannot say.
+c const
+    STYLE_NORMAL:        u32 = "TTF_STYLE_NORMAL"
+    STYLE_BOLD:          u32 = "TTF_STYLE_BOLD"
+    STYLE_ITALIC:        u32 = "TTF_STYLE_ITALIC"
+    STYLE_UNDERLINE:     u32 = "TTF_STYLE_UNDERLINE"
+    STYLE_STRIKETHROUGH: u32 = "TTF_STYLE_STRIKETHROUGH"
+
+// `TTF_HintingFlags`.
+c const
+    HINTING_INVALID:        i32 = "TTF_HINTING_INVALID"
+    HINTING_NORMAL:         i32 = "TTF_HINTING_NORMAL"
+    HINTING_LIGHT:          i32 = "TTF_HINTING_LIGHT"
+    HINTING_MONO:           i32 = "TTF_HINTING_MONO"
+    HINTING_NONE:           i32 = "TTF_HINTING_NONE"
+    HINTING_LIGHT_SUBPIXEL: i32 = "TTF_HINTING_LIGHT_SUBPIXEL"
+
+// `TTF_HorizontalAlignment`.
+c const
+    ALIGN_INVALID: i32 = "TTF_HORIZONTAL_ALIGN_INVALID"
+    ALIGN_LEFT:    i32 = "TTF_HORIZONTAL_ALIGN_LEFT"
+    ALIGN_CENTER:  i32 = "TTF_HORIZONTAL_ALIGN_CENTER"
+    ALIGN_RIGHT:   i32 = "TTF_HORIZONTAL_ALIGN_RIGHT"
+
+// A render call takes a byte length, and zero tells SDL_ttf the text is NUL-terminated — which it
+// always is here, because `cstring` is what produced it.
+const NUL_TERMINATED: usize = 0
+
+// ## The handle
+//
+// SDL_ttf allocates a font and SDL_ttf frees it; nothing outside the library knows its size.
+opaque struct Font
+
+// ## Lifecycle
+
+extern "TTF_Init" init() -> bool
+extern "TTF_Quit" quit()
+extern "TTF_Version" version() -> i32
+extern "TTF_WasInit" was_init() -> i32
+
+// ## Opening a font
+
+extern "TTF_OpenFont" open_font(file: *u8, ptsize: f32) -> *Font
+extern "TTF_CloseFont" close_font(font: *Font)
+extern "TTF_SetFontSize" set_font_size(font: *Font, ptsize: f32) -> bool
+extern "TTF_GetFontSize" get_font_size(font: *Font) -> f32
+
+// ## Settings
+
+extern "TTF_SetFontStyle" set_font_style(font: *Font, style: u32)
+extern "TTF_GetFontStyle" get_font_style(font: *Font) -> u32
+extern "TTF_SetFontOutline" set_font_outline(font: *Font, outline: i32) -> bool
+extern "TTF_GetFontOutline" get_font_outline(font: *Font) -> i32
+extern "TTF_SetFontHinting" set_font_hinting(font: *Font, hinting: i32)
+extern "TTF_GetFontHinting" get_font_hinting(font: *Font) -> i32
+extern "TTF_SetFontKerning" set_font_kerning(font: *Font, enabled: bool)
+extern "TTF_GetFontKerning" get_font_kerning(font: *Font) -> bool
+extern "TTF_SetFontWrapAlignment" set_font_wrap_alignment(font: *Font, align: i32)
+extern "TTF_GetFontWrapAlignment" get_font_wrap_alignment(font: *Font) -> i32
+
+// ## Metrics
+
+extern "TTF_GetFontHeight" get_font_height(font: *Font) -> i32
+extern "TTF_GetFontAscent" get_font_ascent(font: *Font) -> i32
+extern "TTF_GetFontDescent" get_font_descent(font: *Font) -> i32
+extern "TTF_GetFontLineSkip" get_font_line_skip(font: *Font) -> i32
+extern "TTF_GetFontWeight" get_font_weight(font: *Font) -> i32
+extern "TTF_GetFontFamilyName" get_font_family_name(font: *Font) -> *u8
+extern "TTF_GetFontStyleName" get_font_style_name(font: *Font) -> *u8
+extern "TTF_FontHasGlyph" font_has_glyph(font: *Font, ch: u32) -> bool
+
+// ## Measuring
+
+extern "TTF_GetStringSize" get_string_size(font: *Font, text: *u8, len: usize, w: *i32,
+                                           h: *i32) -> bool
+extern "TTF_GetStringSizeWrapped" get_string_size_wrapped(font: *Font, text: *u8, len: usize,
+                                                          wrap: i32, w: *i32, h: *i32) -> bool
+extern "TTF_MeasureString" measure_string(font: *Font, text: *u8, len: usize, max_width: i32,
+                                          measured_width: *i32, measured_length: *usize) -> bool
+
+// ## Rendering
+//
+// **Each of these takes `SDL_Color` by value.** The Scala binding to this same library cannot:
+// Scala Native mis-marshals a small by-value struct argument, so it packs the four channels into a
+// `uint32` by hand and relies on an aggregate of four bytes and a `uint32` travelling in the same
+// register — true on SysV-AMD64 and AArch64, and a bet everywhere else. Nothing of the sort is
+// needed here, and `tests.sysl` proves it by reading a rendered pixel back.
+
+extern "TTF_RenderText_Solid" render_solid(font: *Font, text: *u8, len: usize, fg: Color) -> *Surface
+extern "TTF_RenderText_Shaded" render_shaded(font: *Font, text: *u8, len: usize, fg: Color,
+                                             bg: Color) -> *Surface
+extern "TTF_RenderText_Blended" render_blended(font: *Font, text: *u8, len: usize,
+                                               fg: Color) -> *Surface
+extern "TTF_RenderText_LCD" render_lcd(font: *Font, text: *u8, len: usize, fg: Color,
+                                       bg: Color) -> *Surface
+
+extern "TTF_RenderText_Solid_Wrapped" render_solid_wrapped(font: *Font, text: *u8, len: usize,
+                                                           fg: Color, wrap: i32) -> *Surface
+extern "TTF_RenderText_Shaded_Wrapped" render_shaded_wrapped(font: *Font, text: *u8, len: usize,
+                                                             fg: Color, bg: Color,
+                                                             wrap: i32) -> *Surface
+extern "TTF_RenderText_Blended_Wrapped" render_blended_wrapped(font: *Font, text: *u8, len: usize,
+                                                               fg: Color, wrap: i32) -> *Surface

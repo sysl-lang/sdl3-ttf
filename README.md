@@ -5,14 +5,15 @@ texture.
 
 ```
 dependencies {
-  sdl3     { git = "github.com/sysl-lang/sdl3",     version = "0.1.0" }
-  sdl3-ttf { git = "github.com/sysl-lang/sdl3-ttf", version = "0.1.0" }
+  sdl3     { git = "github.com/sysl-lang/sdl3",     version = "0.2.0" }
+  sdl3-ttf { git = "github.com/sysl-lang/sdl3-ttf", version = "0.2.0" }
 }
 ```
 
 ```sysl
 import sh.sysl.sdl3.*
 import sh.sysl.sdl3_ttf.*
+import sh.sysl.sdl3.c.INIT_VIDEO
 
 main()
     init(INIT_VIDEO)
@@ -33,11 +34,32 @@ main()
 
 ```
 brew install sdl3_ttf                   # pulls sdl3 with it
-sysl run prog.sysl --include-path /opt/homebrew/include --link-path /opt/homebrew/lib
+sysl run prog.sysl --include-path sdl3=/opt/homebrew/include \
+                   --include-path sdl3_ttf=/opt/homebrew/include \
+                   --link-path /opt/homebrew/lib
 ```
 
-The two flags are deliberate — see [`sdl3`](https://github.com/sysl-lang/sdl3)'s README, which also
-says why this is a separate package rather than a module inside that one.
+The flags are deliberate — see [`sdl3`](https://github.com/sysl-lang/sdl3)'s README, which also says
+why this is a separate package rather than a module inside that one. Each include path is given *by
+name*, and the two names are the two packages that read a header: `sh.sysl.sdl3_ttf.c` asks the C
+compiler for SDL_ttf's style, hinting and alignment constants rather than transcribing them, and
+`sh.sysl.sdl3.c` does the same for SDL's. Forget one and the refusal names the package and says
+where its headers usually are.
+
+## Two layers, and handles that own themselves
+
+`sh.sysl.sdl3_ttf.c` holds everything that is C — the link directive, the header, the `c const`
+blocks, the opaque `TTF_Font` and the thirty-five declarations. `sh.sysl.sdl3_ttf` is what an
+application imports.
+
+A `Font` is a `&T` with an `impl Drop`, so `close` is not part of this API: the font goes when the
+last reference to it does. **`TTF_CloseFont` after `TTF_Quit` is a use-after-free**, which is
+SDL_ttf's rule rather than this binding's — a program that calls `ttf_quit` should let its fonts go
+out of scope first, and one that never calls it is fine.
+
+The style mask stays a mask, in `c`, because several styles are true at once and that is what an
+enumeration cannot say. Hinting and wrap alignment are enumerations: `Hinting.Mono`,
+`WrapAlignment.Center`, each with an `Other` arm and a `Display`.
 
 ## `SDL_Color` crosses by value
 
@@ -76,13 +98,23 @@ put text where the text is not.
 `fit(text, max_width)` answers how much of a string lands in a width, **in bytes**: what an ellipsis
 needs to know where to cut, and what an editor needs to place a cursor from a mouse position.
 
+## One value that does not round-trip, and it is SDL_ttf's
+
+`Hinting.LightSubpixel` sets light hinting *plus* a subpixel-positioning flag, and
+`TTF_GetFontHinting` reports only the hinting half — so a font set to it answers `Hinting.Light`.
+That is the library's behaviour rather than this binding's, and the tests pin it as what actually
+happens, so that the missing round trip is a documented fact rather than a suspicion about the
+mapping.
+
 ## Tests
 
 ```
-sysl test . --include-path /opt/homebrew/include --link-path /opt/homebrew/lib
+sysl test . --include-path sdl3=/opt/homebrew/include \
+            --include-path sdl3_ttf=/opt/homebrew/include \
+            --link-path /opt/homebrew/lib
 ```
 
-Fifteen tests, headless, against a real SDL3_ttf. They find a font by trying the places one lives on
+Eighteen tests, headless, against a real SDL3_ttf. They find a font by trying the places one lives on
 macOS and on the common Linux distributions, rather than hard-coding a path — and say so plainly if
 none of them is there, instead of failing forty lines later on a null handle.
 

@@ -1,13 +1,14 @@
 // SDL_ttf 3 — text rendered from a font file, for sysl.
 //
 //     dependencies {
-//       sdl3-ttf { git = "github.com/sysl-lang/sdl3-ttf", version = "0.1.0" }
+//       sdl3-ttf { git = "github.com/sysl-lang/sdl3-ttf", version = "0.2.0" }
 //     }
 //
 // **SDL3 and SDL3_ttf both have to be installed** — `brew install sdl3_ttf` pulls both — and a
 // build needs the prefix on the command line:
 //
-//     sysl run prog.sysl --include-path /opt/homebrew/include --link-path /opt/homebrew/lib
+//     sysl run prog.sysl --include-path sdl3=/opt/homebrew/include \
+//                        --include-path sdl3_ttf=/opt/homebrew/include --link-path /opt/homebrew/lib
 //
 // This is a separate package from `sdl3` rather than a module inside it, and the reason is
 // mechanical: a link directive is never pruned, so a program that only drew rectangles would still
@@ -15,16 +16,24 @@
 
 package {
   name    = "sdl3-ttf"
-  version = "0.1.0"
+  version = "0.2.0"
 }
 
 // The core binding, for `Color`, `Surface`, `Renderer` and `Texture`. It is fetched by the
 // coordinate below, so nothing has to be checked out beside this repository.
 dependencies {
-  sdl3 { git = "github.com/sysl-lang/sdl3", version = "0.1.0" }
+  sdl3 { git = "github.com/sysl-lang/sdl3", version = "0.2.0" }
 }
 
 requires {
   heap  = true
   posix = true
+
+  // `sh.sysl.sdl3_ttf.c` asks the C compiler for SDL_ttf's style, hinting and alignment constants
+  // rather than transcribing them, so the headers are read at compile time and not only at link
+  // time. Saying so here turns a forgotten include path into one refusal naming this package,
+  // rather than clang's "'SDL3_ttf/SDL_ttf.h' file not found" — a file the caller never wrote.
+  headers {
+    sdl3_ttf = "SDL_ttf's own headers — `brew install sdl3_ttf` puts them in /opt/homebrew/include/SDL3_ttf, and Debian's libsdl3-ttf-dev in /usr/include/SDL3_ttf; the path to give is the directory *above* SDL3_ttf"
+  }
 }
