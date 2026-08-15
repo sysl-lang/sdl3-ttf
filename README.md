@@ -34,17 +34,17 @@ main()
 
 ```
 brew install sdl3_ttf                   # pulls sdl3 with it
-sysl run prog.sysl --include-path sdl3=/opt/homebrew/include \
-                   --include-path sdl3_ttf=/opt/homebrew/include \
-                   --link-path /opt/homebrew/lib
+sysl run prog.sysl
 ```
 
-The flags are deliberate — see [`sdl3`](https://github.com/sysl-lang/sdl3)'s README, which also says
-why this is a separate package rather than a module inside that one. Each include path is given *by
-name*, and the two names are the two packages that read a header: `sh.sysl.sdl3_ttf.c` asks the C
-compiler for SDL_ttf's style, hinting and alignment constants rather than transcribing them, and
-`sh.sysl.sdl3.c` does the same for SDL's. Forget one and the refusal names the package and says
-where its headers usually are.
+No flags — see [`sdl3`](https://github.com/sysl-lang/sdl3)'s README, which also says why this is a
+separate package rather than a module inside that one. Two packages here read a header:
+`sh.sysl.sdl3_ttf.c` asks the C compiler for SDL_ttf's style, hinting and alignment constants rather
+than transcribing them, and `sh.sysl.sdl3.c` does the same for SDL's. Each names its library, so
+pkg-config answers for both and a missing one is refused by name.
+
+Until 0.2.1 that took three flags, and the override is now spelled `--include-path sdl3-ttf=<dir>`
+rather than `sdl3_ttf=` — the name is pkg-config's now. **Needs sysl 0.0.56.**
 
 ## Two layers, and handles that own themselves
 
@@ -109,9 +109,7 @@ mapping.
 ## Tests
 
 ```
-sysl test . --include-path sdl3=/opt/homebrew/include \
-            --include-path sdl3_ttf=/opt/homebrew/include \
-            --link-path /opt/homebrew/lib
+sysl test .
 ```
 
 Eighteen tests, headless, against a real SDL3_ttf. They find a font by trying the places one lives on
