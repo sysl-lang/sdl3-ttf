@@ -1,7 +1,7 @@
 // SDL_ttf 3 — text rendered from a font file, for sysl.
 //
 //     dependencies {
-//       sdl3-ttf { git = "github.com/sysl-lang/sdl3-ttf", version = "0.2.0" }
+//       sdl3-ttf { git = "github.com/sysl-lang/sdl3-ttf", version = "0.2.1" }
 //     }
 //
 // **SDL3 and SDL3_ttf both have to be installed** — `brew install sdl3_ttf` pulls both — and a
@@ -16,13 +16,13 @@
 
 package {
   name    = "sdl3-ttf"
-  version = "0.2.0"
+  version = "0.2.1"
 }
 
 // The core binding, for `Color`, `Surface`, `Renderer` and `Texture`. It is fetched by the
 // coordinate below, so nothing has to be checked out beside this repository.
 dependencies {
-  sdl3 { git = "github.com/sysl-lang/sdl3", version = "0.2.0" }
+  sdl3 { git = "github.com/sysl-lang/sdl3", version = "0.2.1" }
 }
 
 requires {
@@ -31,9 +31,21 @@ requires {
 
   // `sh.sysl.sdl3_ttf.c` asks the C compiler for SDL_ttf's style, hinting and alignment constants
   // rather than transcribing them, so the headers are read at compile time and not only at link
-  // time. Saying so here turns a forgotten include path into one refusal naming this package,
-  // rather than clang's "'SDL3_ttf/SDL_ttf.h' file not found" — a file the caller never wrote.
-  headers {
-    sdl3_ttf = "SDL_ttf's own headers — `brew install sdl3_ttf` puts them in /opt/homebrew/include/SDL3_ttf, and Debian's libsdl3-ttf-dev in /usr/include/SDL3_ttf; the path to give is the directory *above* SDL3_ttf"
+  // time — and `@link("SDL3_ttf")` needs the library itself at the end of it. SDL_ttf ships an
+  // `sdl3-ttf.pc` that answers both, so the machine is asked rather than the reader.
+  //
+  // **This one name is spelled three ways, which is the argument for writing it down.** The sysl
+  // module is `sh.sysl.sdl3_ttf`, the link directive says `SDL3_ttf`, and pkg-config files it as
+  // `sdl3-ttf`. Nothing recovers any of them from the others.
+  //
+  // **The override flag is renamed by this release**, from `--include-path sdl3_ttf=<dir>` to
+  // `--include-path sdl3-ttf=<dir>`, because the name is now pkg-config's rather than this file's
+  // choosing. That is the one breaking change here, and it reaches only somebody passing the flag by
+  // hand — which after this release is somebody with no pkg-config.
+  //
+  // `sdl3` itself is not named here: it is a dependency, and its own manifest declares it, which the
+  // consumer's build asks for on this package's behalf.
+  pkg_config {
+    sdl3-ttf = "SDL_ttf — `brew install sdl3_ttf` on macOS, Debian's libsdl3-ttf-dev, and pkg-config finds it either way"
   }
 }
