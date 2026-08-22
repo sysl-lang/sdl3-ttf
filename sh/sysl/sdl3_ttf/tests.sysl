@@ -3,8 +3,8 @@ module sh.sysl.sdl3_ttf
 
 import sysl.fs.is_file
 import sh.sysl.sdl3_ttf.c
-import sh.sysl.sdl3.{Color, HINT_VIDEO_DRIVER, create_window, init, quit, rgb, set_hint}
-import sh.sysl.sdl3.c.{INIT_VIDEO, WINDOW_HIDDEN}
+import sh.sysl.sdl3.{Color, HINT_VIDEO_DRIVER, INIT_VIDEO, WINDOW_HIDDEN, create_window, init,
+                     quit, rgb, set_hint}
 
 // The package's own tests, against a real SDL3_ttf.
 //

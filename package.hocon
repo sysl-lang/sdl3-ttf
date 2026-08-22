@@ -1,7 +1,7 @@
 // SDL_ttf 3 — text rendered from a font file, for sysl.
 //
 //     dependencies {
-//       sdl3-ttf { git = "github.com/sysl-lang/sdl3-ttf", version = "0.2.1" }
+//       sdl3-ttf { git = "github.com/sysl-lang/sdl3-ttf", version = "0.3.0" }
 //     }
 //
 // **SDL3 and SDL3_ttf both have to be installed** — `brew install sdl3_ttf` pulls both — and a
@@ -16,13 +16,13 @@
 
 package {
   name    = "sdl3-ttf"
-  version = "0.2.1"
+  version = "0.3.0"
 }
 
 // The core binding, for `Color`, `Surface`, `Renderer` and `Texture`. It is fetched by the
 // coordinate below, so nothing has to be checked out beside this repository.
 dependencies {
-  sdl3 { git = "github.com/sysl-lang/sdl3", version = "0.2.1" }
+  sdl3 { git = "github.com/sysl-lang/sdl3", version = "0.3.0" }
 }
 
 requires {
