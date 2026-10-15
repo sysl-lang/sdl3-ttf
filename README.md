@@ -3,6 +3,8 @@
 SDL_ttf 3 for sysl — a font file, and text rendered out of it onto a surface or straight to a
 texture.
 
+*An independent sysl package for SDL_ttf. It is not affiliated with or endorsed by SDL_ttf's authors or trademark holders.*
+
 ```
 dependencies {
   sdl3     { git = "github.com/sysl-lang/sdl3",     version = "0.3.6" }
