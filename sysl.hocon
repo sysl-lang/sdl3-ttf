@@ -18,9 +18,9 @@ package {
   name    = "sdl3-ttf"
   version = "0.3.3"
 
-  // The oldest compiler this builds with: the manifest's `sysl.hocon` name does not exist before
-  // 0.6.0.
-  sysl = "0.6.0"
+  // The oldest compiler this builds with: sdl3, which this reaches, is written against 0.10.0's
+  // read-only views.
+  sysl = "0.10.0"
 }
 
 // The core binding, for `Color`, `Surface`, `Renderer` and `Texture`. It is fetched by the
