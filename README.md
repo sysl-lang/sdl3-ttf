@@ -7,8 +7,8 @@ texture.
 
 ```
 dependencies {
-  sdl3     { git = "github.com/sysl-lang/sdl3",     version = "0.3.11" }
-  sdl3-ttf { git = "github.com/sysl-lang/sdl3-ttf", version = "0.3.3" }
+  sdl3     { git = "github.com/sysl-lang/sdl3",     version = "0.3.25" }
+  sdl3-ttf { git = "github.com/sysl-lang/sdl3-ttf", version = "0.3.4" }
 }
 ```
 
